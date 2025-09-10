@@ -69,12 +69,12 @@ def main():
     # We allow the user to specify a single config file.
     # The parse_yaml_file method returns a dictionary of arguments.
     # If a config file is not provided, the script will use the default values.
-    if len(os.sys.argv) == 2 and os.sys.argv[1].endswith(".yaml"):
-        model_args, data_args, training_args = parser.parse_yaml_file(
-            yaml_file=os.path.abspath(os.sys.argv[1])
-        )
-    else:
-        model_args, data_args, training_args = parser.parse_args_into_dataclasses()
+    assert len(os.sys.argv) == 2 and os.sys.argv[1].endswith(
+        ".yaml"
+    ), "Too many args or missing config."
+    model_args, data_args, training_args = parser.parse_yaml_file(
+        yaml_file=os.path.abspath(os.sys.argv[1])
+    )
 
     # 2. Load model and tokenizer
     device_map = "auto"

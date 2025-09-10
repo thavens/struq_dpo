@@ -4,8 +4,6 @@
 # Model Arguments
 # -----------------
 model_name_or_path: "/scratch/public_models/huggingface/Qwen/Qwen3-4B"
-# model_name_or_path: "/scratch/public_models/huggingface/Qwen/Qwen2.5-0.5B-Instruct"
-# model_name_or_path: "/scratch/public_models/huggingface/meta-llama/Llama-3.2-1B-Instruct"
 dtype: "bfloat16"
 attn_implementation: "flash_attention_2"
 
@@ -21,10 +19,10 @@ dataset_name: "thavens/Qwen3-4B-secalign"
 # Directory to save the trained model and training artifacts.
 use_liger_kernel: true
 # use_liger_loss: true
-output_dir: "./results_dpo_qwen_secalign"
+output_dir: "./results_dpo_qwen_secalign_lr_2e-5"
 
 beta: 0.1
-learning_rate: 1.6e-4
+learning_rate: 2.0e-5
 max_prompt_length: 512
 max_length: 1024
 num_train_epochs: 3
