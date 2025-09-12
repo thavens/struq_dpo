@@ -8,6 +8,6 @@ wheels/
 
 # Virtual environments
 .venv
-results_dpo_qwen_secalign/
+outputs/
 dataset/
 wandb/
