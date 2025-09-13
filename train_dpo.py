@@ -14,6 +14,7 @@ import json
 import os
 from dataclasses import dataclass, field
 from typing import Optional
+import yaml
 
 import torch
 from datasets import load_dataset
@@ -62,19 +63,13 @@ class DataArguments:
 
 
 def main():
-    # 1. Parse arguments
-    # The HfArgumentParser allows us to parse arguments from a YAML file, a JSON file,
-    # or command-line arguments. Here we'll prioritize the YAML file.
-    parser = HfArgumentParser((ModelArguments, DataArguments, DPOConfig))
-    # We allow the user to specify a single config file.
-    # The parse_yaml_file method returns a dictionary of arguments.
-    # If a config file is not provided, the script will use the default values.
-    assert len(os.sys.argv) == 2 and os.sys.argv[1].endswith(
-        ".yaml"
-    ), "Too many args or missing config."
-    model_args, data_args, training_args = parser.parse_yaml_file(
-        yaml_file=os.path.abspath(os.sys.argv[1])
-    )
+    with open(os.path.abspath(os.sys.argv[1])) as f:
+        yaml_content = yaml.safe_load(f)
+    
+    model_args = ModelArguments(**yaml_content["model_args"])
+    data_args = DataArguments(**yaml_content["data_args"])
+    trainer_args = DPOConfig(**yaml_content["trainer_args"])
+    peft_config = LoraConfig(**yaml_content["lora_args"])
 
     # 2. Load model and tokenizer
     device_map = "auto"
@@ -139,21 +134,11 @@ def main():
     # You can optionally format an evaluation dataset if you have one
     # eval_dataset = dataset["test"]
 
-    # 4. Initialize PEFT config for LoRA
-    # Using LoRA is highly recommended for efficient training.
-    peft_config = LoraConfig(
-        r=32,
-        lora_alpha=8,
-        lora_dropout=0.1,
-        bias="none",
-        target_modules=["q_proj", "v_proj", "gate_proj", "down_proj", "up_proj"],
-    )
-
     # 5. Initialize DPOTrainer
     trainer = DPOTrainer(
         model,
         model_ref,
-        args=training_args,
+        args=trainer_args,
         train_dataset=train_dataset,
         processing_class=tokenizer,
         peft_config=peft_config,
@@ -165,8 +150,8 @@ def main():
 
     # 7. Save the model
     print("Saving final model...")
-    trainer.save_model(training_args.output_dir)
-    print(f"Model saved to {training_args.output_dir}")
+    trainer.save_model(trainer_args.output_dir)
+    print(f"Model saved to {trainer_args.output_dir}")
 
 
 if __name__ == "__main__":
