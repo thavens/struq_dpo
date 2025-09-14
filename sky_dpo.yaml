@@ -49,4 +49,4 @@ setup: |
   uv sync --no-build-isolation --all-extras
 
 run: |
-  uv run accelerate launch --num_processes 4 --config_file default_config.yaml train_dpo.py experiments/dsr1ld_8b/config.yaml
+  uv run accelerate launch --num_processes 4 --config_file default_config.yaml train_dpo.py experiments/qwen3_8b/config.yaml

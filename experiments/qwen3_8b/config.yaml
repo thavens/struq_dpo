@@ -1,40 +1,42 @@
-# DPO Training Configuration for Qwen2-4B on the secalign dataset
+model_args:
+  model_name_or_path: "Qwen/Qwen3-8B"
+  dtype: "bfloat16"
+  attn_implementation: "flash_attention_2"
+  attention_dropout: 0.1
 
-# -----------------
-# Model Arguments
-# -----------------
-model_name_or_path: "Qwen/Qwen3-8B"
-dtype: "bfloat16"
-attn_implementation: "flash_attention_2"
+data_args:
+  dataset_name: "thavens/Qwen3-8B-secalign"
 
-# -----------------
-# Data Arguments
-# -----------------
-# The dataset to use for DPO training. It must contain 'prompt', 'chosen', and 'rejected' columns.
-dataset_name: "thavens/Qwen3-8B-secalign"
+lora_args:
+  r: 32
+  lora_alpha: 8
+  lora_dropout: 0.1
+  bias: "none"
+  target_modules:
+    - "q_proj"
+    - "v_proj"
+    - "gate_proj"
+    - "down_proj"
+    - "up_proj"
 
-# -------------------------
-# DPO Training Arguments
-# -------------------------
-# Directory to save the trained model and training artifacts.
-use_liger_kernel: true
-# use_liger_loss: true
-output_dir: "/bucket/results_dpo_qwen_secalign"
+trainer_args:
+  use_liger_kernel: true
+  output_dir: "/bucket/results_dpo_qwen_secalign"
 
-beta: 0.1
-learning_rate: 1.6e-4
-max_prompt_length: 1024
-max_length: 2048
-num_train_epochs: 3
-padding_free: true
+  beta: 0.1
+  learning_rate: 1.6e-4
+  max_prompt_length: 1024
+  max_length: 2048
+  num_train_epochs: 3
+  padding_free: true
 
-per_device_train_batch_size: 8
-gradient_accumulation_steps: 4
-gradient_checkpointing: true
-lr_scheduler_type: "cosine"
-warmup_steps: 10
-logging_steps: 1
-save_strategy: "epoch"
-bf16: true
-remove_unused_columns: false
-report_to: "wandb"
+  per_device_train_batch_size: 8
+  gradient_accumulation_steps: 4
+  gradient_checkpointing: true
+  lr_scheduler_type: "cosine"
+  warmup_steps: 10
+  logging_steps: 1
+  save_strategy: "epoch"
+  bf16: true
+  remove_unused_columns: false
+  report_to: "wandb"
