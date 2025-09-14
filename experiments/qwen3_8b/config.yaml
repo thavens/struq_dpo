@@ -40,3 +40,4 @@ trainer_args:
   bf16: true
   remove_unused_columns: false
   report_to: "wandb"
+  disable_dropout: false
