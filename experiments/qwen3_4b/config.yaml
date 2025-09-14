@@ -2,6 +2,7 @@ model_args:
   model_name_or_path: "/scratch/public_models/huggingface/Qwen/Qwen3-4B"
   dtype: "bfloat16"
   attn_implementation: "flash_attention_2"
+  attention_dropout: 0.1
 
 data_args:
   dataset_name: "thavens/Qwen3-4B-secalign"
@@ -28,8 +29,8 @@ trainer_args:
   max_length: 1024
   num_train_epochs: 3
 
-  per_device_train_batch_size: 8
-  gradient_accumulation_steps: 4
+  per_device_train_batch_size: 4
+  gradient_accumulation_steps: 8
   gradient_checkpointing: true
   lr_scheduler_type: "cosine"
   warmup_steps: 10
@@ -38,3 +39,4 @@ trainer_args:
   bf16: true
   remove_unused_columns: false
   report_to: "wandb"
+  disable_dropout: false
