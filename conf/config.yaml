@@ -41,3 +41,4 @@ trainer_args:
   remove_unused_columns: false
   report_to: "wandb"
   disable_dropout: false
+  run_name: "qwen3-8b-dpo"

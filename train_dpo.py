@@ -15,7 +15,8 @@ import os
 from dataclasses import dataclass, field
 from typing import Optional
 import yaml
-
+import hydra
+from omegaconf import DictConfig
 import torch
 from datasets import load_dataset
 from transformers import (
@@ -63,14 +64,12 @@ class DataArguments:
     )
 
 
-def main():
-    with open(os.path.abspath(os.sys.argv[1])) as f:
-        yaml_content = yaml.safe_load(f)
-
-    model_args = ModelArguments(**yaml_content["model_args"])
-    data_args = DataArguments(**yaml_content["data_args"])
-    trainer_args = DPOConfig(**yaml_content["trainer_args"])
-    peft_config = LoraConfig(**yaml_content["lora_args"])
+@hydra.main(version_base=None, config_path="conf", config_name="config")
+def main(cfg: DictConfig) -> None:
+    model_args = ModelArguments(**cfg["model_args"])
+    data_args = DataArguments(**cfg["data_args"])
+    trainer_args = DPOConfig(**cfg["trainer_args"])
+    peft_config = LoraConfig(**cfg["lora_args"])
 
     # 2. Load model and tokenizer
     device_map = "auto"

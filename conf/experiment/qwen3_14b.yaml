@@ -1,0 +1,12 @@
+# @package _global_
+model_args:
+  model_name_or_path: "Qwen/Qwen3-14B"
+
+data_args:
+  dataset_name: "thavens/Qwen3-14B-secalign"
+
+trainer_args:
+  run_name: q3_14b_secalign_basic_ld_0.1_ad_0.1
+  output_dir: "/bucket/${run_name}"
+
+  gradient_accumulation_steps: 2
