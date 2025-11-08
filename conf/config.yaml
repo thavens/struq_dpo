@@ -4,6 +4,9 @@ model_args:
   attn_implementation: "flash_attention_2"
   attention_dropout: 0.1
 
+tokenizer_args:
+  tokenizer_name_or_path: ${model_args.model_name_or_path}
+
 data_args:
   dataset_name: "thavens/Qwen3-8B-secalign"
 

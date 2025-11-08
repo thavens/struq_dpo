@@ -54,6 +54,25 @@ class ModelArguments:
 
 
 @dataclass
+class TokenizerArguments:
+    """
+    Arguments pertaining to which model/config/tokenizer we are going to fine-tune from.
+    """
+
+    tokenizer_name_or_path: str = field(
+        metadata={
+            "help": "Path to pretrained tokenizer or tokenizer identifier from huggingface.co/models"
+        }
+    )
+    chat_template: str = field(
+        default="",
+        metadata={
+            "help": "Path to custom chat template jinja file.",
+        },
+    )
+
+
+@dataclass
 class DataArguments:
     """
     Arguments pertaining to what data we are going to use.
@@ -66,7 +85,9 @@ class DataArguments:
 
 @hydra.main(version_base=None, config_path="conf", config_name="config")
 def main(cfg: DictConfig) -> None:
+    print(cfg)
     model_args = ModelArguments(**cfg["model_args"])
+    tokenizer_args = TokenizerArguments(**cfg["tokenizer_args"])
     data_args = DataArguments(**cfg["data_args"])
     trainer_args = DPOConfig(**cfg["trainer_args"])
     peft_config = LoraConfig(**cfg["lora_args"])
@@ -89,8 +110,15 @@ def main(cfg: DictConfig) -> None:
     model_ref = None
 
     tokenizer = AutoTokenizer.from_pretrained(
-        model_args.model_name_or_path, trust_remote_code=True
+        tokenizer_args.tokenizer_name_or_path,
+        trust_remote_code=True,
     )
+    if tokenizer_args.chat_template:
+        with open(tokenizer_args.chat_template, "r") as f:
+            chat_template = f.read()
+        tokenizer.chat_template = chat_template
+        print(f"Loaded custom chat template from {tokenizer_args.chat_template}")
+
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
         print("Set pad_token to eos_token")
@@ -116,12 +144,26 @@ def main(cfg: DictConfig) -> None:
         ):
             # The DPO trainer expects string inputs, not tokenized inputs.
             # We apply the chat template to convert the list of messages to a single string.
-            example["prompt"] = tokenizer.apply_chat_template(
-                example["prompt"],
-                tokenize=False,
-                add_generation_prompt=True,
-                enable_thinking=False,
-            )
+            if "tools" in example:
+                try:
+                    example["prompt"] = tokenizer.apply_chat_template(
+                        example["prompt"],
+                        tokenize=False,
+                        add_generation_prompt=True,
+                        enable_thinking=False,
+                        tools=json.loads(example["tools"]),
+                    )
+                except:
+                    import pudb
+
+                    pudb.post_mortem()
+            else:
+                example["prompt"] = tokenizer.apply_chat_template(
+                    example["prompt"],
+                    tokenize=False,
+                    add_generation_prompt=True,
+                    enable_thinking=False,
+                )
             example["chosen"] = example["chosen"][0]["content"] + "<|im_end|>\n"
             example["rejected"] = example["rejected"][0]["content"] + "<|im_end|>\n"
 

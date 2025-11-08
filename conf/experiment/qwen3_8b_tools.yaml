@@ -1,0 +1,13 @@
+# @package _global_
+model_args:
+  model_name_or_path: /scratch/public_models/huggingface/Qwen/Qwen3-8B
+
+data_args:
+  dataset_name: "thavens/Qwen3-8B-secalign-tools"
+
+trainer_args:
+  run_name: q3_8b_secalign_tools_ld_0.1_ad_0.1
+  output_dir: ./outputs/${trainer_args.run_name}
+
+  per_device_train_batch_size: 4
+  gradient_accumulation_steps: 8
