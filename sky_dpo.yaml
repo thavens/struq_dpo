@@ -2,8 +2,8 @@ name: grpo
 
 resources:
   accelerators: H100:8
-  use_spot: true
-  infra: gcp/us-east4
+  # use_spot: true
+  infra: lambda
   # image_id: docker:runpod/pytorch:2.1.0-py3.10-cuda11.8.0-devel-ubuntu22.04
 
 workdir: .
@@ -49,4 +49,4 @@ setup: |
   uv sync --no-build-isolation --all-extras
 
 run: |
-  uv run accelerate launch --num_processes 8 --config_file default_config.yaml train_dpo.py +experiment=qwen3_14b
+  uv run accelerate launch --num_processes 8 --config_file default_config.yaml train_dpo.py +experiment=qwen3_14b_tools
