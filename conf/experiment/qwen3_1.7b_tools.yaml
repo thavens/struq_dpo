@@ -1,0 +1,14 @@
+# @package _global_
+model_args:
+  model_name_or_path: "Qwen/Qwen3-1.7B"
+
+data_args:
+  dataset_name: "thavens/Qwen3-1.7B-secalign-tools"
+
+trainer_args:
+  run_name: q3_1.7b_secalign_tools_ld_0.1_ad_0.1
+  output_dir: /bucket/${trainer_args.run_name}
+
+  per_device_train_batch_size: 16
+  gradient_accumulation_steps: 2
+
