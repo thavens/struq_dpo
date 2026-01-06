@@ -21,8 +21,8 @@ torch = { index = "pytorch" }
 
 [[tool.uv.index]]
 name = "pytorch"
-url = "https://download.pytorch.org/whl/cu124"
+url = "https://download.pytorch.org/whl/cu128"
 explicit = true
 
 [project.optional-dependencies]
-gpu = ["liger-kernel", "flash-attn"]
+gpu = ["liger-kernel", "flash-attn==2.8.3"]
