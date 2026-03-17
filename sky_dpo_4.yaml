@@ -2,8 +2,8 @@ name: grpo
 
 resources:
   accelerators: H100:4
-  # use_spot: true
-  infra: lambda
+  use_spot: true
+  infra: gcp/us-east4
   # image_id: docker:runpod/pytorch:2.1.0-py3.10-cuda11.8.0-devel-ubuntu22.04
 
 workdir: .
@@ -18,7 +18,7 @@ file_mounts:
   #   persistent: true
   #   config:
   #     disk_size: 128
-  /bucket:
+  outputs:
     name: dpo-bucket-final
     store: gcs
 
@@ -49,7 +49,8 @@ setup: |
   uv sync --no-build-isolation --all-extras
 
 run: |
-  uv run accelerate launch --num_processes 4 --config_file default_config.yaml train_dpo.py +experiment=qwen3_0.6b_tools
-  uv run accelerate launch --num_processes 4 --config_file default_config.yaml train_dpo.py +experiment=qwen3_1.7b_tools
-  uv run accelerate launch --num_processes 4 --config_file default_config.yaml train_dpo.py +experiment=qwen3_4b_tools
-  uv run accelerate launch --num_processes 4 --config_file default_config.yaml train_dpo.py +experiment=qwen3_8b_tools
+  uv run accelerate launch --num_processes 4 --config_file default_config.yaml train_dpo.py +experiment=granite3_3_8b_tools
+  # uv run accelerate launch --num_processes 4 --config_file default_config.yaml train_dpo.py +experiment=qwen3_0.6b_tools
+  # uv run accelerate launch --num_processes 4 --config_file default_config.yaml train_dpo.py +experiment=qwen3_1.7b_tools
+  # uv run accelerate launch --num_processes 4 --config_file default_config.yaml train_dpo.py +experiment=qwen3_4b_tools
+  # uv run accelerate launch --num_processes 4 --config_file default_config.yaml train_dpo.py +experiment=qwen3_8b_tools

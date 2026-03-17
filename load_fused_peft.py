@@ -28,8 +28,11 @@ def load_gpt_oss(base_model, ckpt_folder, dtype):
     tensors = {}
     with safe_open(os.path.join(ckpt_folder, "adapter_model.safetensors"), "pt") as f:
         for k in f.keys():
-            tensors[k] = f.get_tensor(k)
-    model.load_state_dict(tensors)
+            left, right = k.rsplit(".", 1)
+            new_name = left + ".default." + right
+            tensors[new_name] = f.get_tensor(k)
+    xor = model.load_state_dict(tensors, strict=False)
+    assert not xor.unexpected_keys, f"{"=" * 10} Missing Keys {"=" * 10}\n{xor.missing_keys}\n{"=" * 10} Unexpected Keys {"=" * 10}\n{xor.unexpected_keys}"
     return model
     
 

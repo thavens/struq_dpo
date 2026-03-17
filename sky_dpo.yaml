@@ -18,7 +18,7 @@ file_mounts:
   #   persistent: true
   #   config:
   #     disk_size: 128
-  /bucket:
+  outputs:
     name: dpo-bucket-gcs
     store: gcs
 

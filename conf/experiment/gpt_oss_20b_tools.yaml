@@ -24,6 +24,7 @@ lora_args:
     - "experts"
 
 trainer_args:
+  learning_rate: 5e-5
   run_name: gpt-oss-20b_secalign_tools_ld_0.1_ad_0.1
   output_dir: outputs/${trainer_args.run_name}
 
