@@ -171,16 +171,16 @@ class GptOssExpertsLora(nn.Module, peft.tuners.lora.layer.LoraLayer):
         h = base_layer.hidden_size
         i = base_layer.intermediate_size
 
-        self.lora_A = nn.ParameterDict(
+        self.lora_A[adapter_name] = nn.ParameterDict(
             {
-                "gate_up_proj_lora_A": nn.Parameter(torch.empty(ne, h, r)),
-                "down_proj_lora_A": nn.Parameter(torch.empty(ne, i, r)),
+                "gate_up_proj": nn.Parameter(torch.empty(ne, h, r), requires_grad=True),
+                "down_proj": nn.Parameter(torch.empty(ne, i, r), requires_grad=True),
             }
         )
-        self.lora_B = nn.ParameterDict(
+        self.lora_B[adapter_name] = nn.ParameterDict(
             {
-                "gate_up_proj_lora_B": nn.Parameter(torch.empty(ne, r, 2 * i)),
-                "down_proj_lora_B": nn.Parameter(torch.empty(ne, r, h)),
+                "gate_up_proj": nn.Parameter(torch.empty(ne, r, 2 * i), requires_grad=True),
+                "down_proj": nn.Parameter(torch.empty(ne, r, h), requires_grad=True),
             }
         )
 
@@ -194,11 +194,13 @@ class GptOssExpertsLora(nn.Module, peft.tuners.lora.layer.LoraLayer):
             down_delta:    (num_experts, intermediate_size, hidden_size)
         """
         scaling = self.scaling[adapter_name]
+        lora_A = self.lora_A[adapter_name]
+        lora_B = self.lora_B[adapter_name]
         gate_up_delta = (
-            torch.bmm(self.lora_A["gate_up_proj_lora_A"], self.lora_B["gate_up_proj_lora_B"]) * scaling
+            torch.bmm(lora_A["gate_up_proj"], lora_B["gate_up_proj"]) * scaling
         )
         down_delta = (
-            torch.bmm(self.lora_A["down_proj_lora_A"], self.lora_B["down_proj_lora_B"]) * scaling
+            torch.bmm(lora_A["down_proj"], lora_B["down_proj"]) * scaling
         )
         return gate_up_delta, down_delta
 
@@ -244,10 +246,12 @@ class GptOssExpertsLora(nn.Module, peft.tuners.lora.layer.LoraLayer):
 
     def reset_lora_parameters(self):
         # Initialize A with kaiming_uniform_ (same as nn.Linear default) and B to zero.
-        for key in self.lora_A:
-            nn.init.kaiming_uniform_(self.lora_A[key], a=math.sqrt(5))
-        for key in self.lora_B:
-            nn.init.zeros_(self.lora_B[key])
+        for adapter_dict in self.lora_A.values():
+            for param in adapter_dict.values():
+                nn.init.kaiming_uniform_(param, a=math.sqrt(5))
+        for adapter_dict in self.lora_B.values():
+            for param in adapter_dict.values():
+                nn.init.zeros_(param)
 
     def _apply_gate(self, gate_up: torch.Tensor) -> torch.Tensor:
         gate, up = gate_up[..., ::2], gate_up[..., 1::2]
@@ -268,10 +272,29 @@ class GptOssExpertsLora(nn.Module, peft.tuners.lora.layer.LoraLayer):
             torch.Tensor
         """
         bl = self.base_layer
+        hidden_states_2d = hidden_states.view(-1, bl.hidden_size)
         has_bias = bl.gate_up_proj_bias is not None
+
+        # When adapters are disabled (e.g. DPO reference pass) or merged into
+        # base weights, fall back to the base layer so the LoRA delta is not
+        # applied twice / applied when it shouldn't be.
+        if self.disable_adapters or self.merged:
+            return grouped_mm_experts_forward(
+                hidden_states=hidden_states_2d,
+                top_k_index=router_indices,
+                top_k_weights=routing_weights,
+                num_experts=bl.num_experts,
+                has_bias=has_bias,
+                is_transposed=True,
+                gate_up_proj=bl.gate_up_proj,
+                down_proj=bl.down_proj,
+                apply_gate=self._apply_gate,
+                gate_up_proj_bias=bl.gate_up_proj_bias,
+                down_proj_bias=bl.down_proj_bias
+            )
+
         scaling = self.scaling[self.adapter_name]
 
-        hidden_states_2d = hidden_states.view(-1, bl.hidden_size)
         device = hidden_states_2d.device
         num_top_k = router_indices.size(-1)
         num_tokens = hidden_states_2d.size(0)
@@ -304,11 +327,13 @@ class GptOssExpertsLora(nn.Module, peft.tuners.lora.layer.LoraLayer):
         )  # (S, 2 * intermediate_dim)
 
         # gate_up LoRA: hidden -> r -> 2*intermediate
+        lora_A = self.lora_A[self.adapter_name]
+        lora_B = self.lora_B[self.adapter_name]
         lora_gate_up = _grouped_linear(
-            selected_hidden_states_g, self.lora_A["gate_up_proj_lora_A"], offsets, is_transposed=True
+            selected_hidden_states_g, lora_A["gate_up_proj"], offsets, is_transposed=True
         )
         lora_gate_up = _grouped_linear(
-            lora_gate_up, self.lora_B["gate_up_proj_lora_B"], offsets, is_transposed=True
+            lora_gate_up, lora_B["gate_up_proj"], offsets, is_transposed=True
         )
         proj_out = proj_out + lora_gate_up * scaling
 
@@ -326,10 +351,10 @@ class GptOssExpertsLora(nn.Module, peft.tuners.lora.layer.LoraLayer):
 
         # down LoRA: intermediate -> r -> hidden
         lora_down = _grouped_linear(
-            proj_out, self.lora_A["down_proj_lora_A"], offsets, is_transposed=True
+            proj_out, lora_A["down_proj"], offsets, is_transposed=True
         )
         lora_down = _grouped_linear(
-            lora_down, self.lora_B["down_proj_lora_B"], offsets, is_transposed=True
+            lora_down, lora_B["down_proj"], offsets, is_transposed=True
         )
         proj_out = down_out + lora_down * scaling
 

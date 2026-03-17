@@ -16,15 +16,14 @@ lora_args:
   lora_dropout: 0
   r: 8
   target_modules:
-    - "q_proj"
-    - "v_proj"
-    - "gate_proj"
-    - "down_proj"
-    - "up_proj"
+    # - "q_proj"
+    # - "v_proj"
+    # - "gate_proj"
+    # - "down_proj"
+    # - "up_proj"
     - "experts"
 
 trainer_args:
-  learning_rate: 5e-5
   run_name: gpt-oss-20b_secalign_tools_ld_0.1_ad_0.1
   output_dir: outputs/${trainer_args.run_name}
 
