@@ -23,11 +23,13 @@ from transformers import (
     AutoModelForCausalLM,
     AutoTokenizer,
     HfArgumentParser,
+    Mxfp4Config,
 )
-from peft import LoraConfig
+from peft import LoraConfig, get_peft_model
 from trl import DPOTrainer, DPOConfig
 from omegaconf import OmegaConf
-
+from transformers.models.gpt_oss.modeling_gpt_oss import GptOssExperts
+from gpt_moe_layer import GptOssExpertsLora
 
 @dataclass
 class ModelArguments:
@@ -52,6 +54,25 @@ class ModelArguments:
         default="kernels-community/flash-attn3",
     )
     attention_dropout: Optional[float] = field(default=0.0)
+    trust_remote_code: bool = field(default=False)
+    quantization: Optional[str] = field(
+        default=None,
+        metadata={
+            "help": "Quantization config to use. Options: 'mxfp4' or null/None for no quantization.",
+        },
+    )
+    use_kernels: bool = field(default=False)
+    dequantize: bool = field(
+        default=True,
+        metadata={
+            "help": "Whether to set dequantize=True on the quantization config.",
+        },
+    )
+
+    def get_quantization_config(self):
+        if self.quantization == "mxfp4":
+            return Mxfp4Config(dequantize=self.dequantize)
+        return None
 
 
 @dataclass
@@ -116,19 +137,31 @@ def main(cfg: DictConfig) -> None:
     tokenizer_args = TokenizerArguments(**cfg["tokenizer_args"])
     data_args = DataArguments(**cfg["data_args"])
     trainer_args = DPOConfig(**cfg["trainer_args"])
-    trainer_args.model_init_kwargs = cfg["model_args"]
-    del trainer_args.model_init_kwargs["model_name_or_path"]
+    # trainer_args.model_init_kwargs = cfg["model_args"]
+    # del trainer_args.model_init_kwargs["model_name_or_path"]
     peft_config = LoraConfig(**cfg["lora_args"])
     format_args = FormatArguments(**cfg["format_args"])
 
     # 2. Load model and tokenizer
-    # model = AutoModelForCausalLM.from_pretrained(
-    #     model_args.model_name_or_path,
-    #     dtype=model_args.dtype,
-    #     trust_remote_code=True,
-    #     attn_implementation=model_args.attn_implementation,
-    #     attention_dropout=model_args.attention_dropout,
-    # )
+    model = AutoModelForCausalLM.from_pretrained(
+        model_args.model_name_or_path,
+        dtype=model_args.dtype,
+        trust_remote_code=model_args.trust_remote_code,
+        attn_implementation=model_args.attn_implementation,
+        attention_dropout=model_args.attention_dropout,
+        device_map=None,
+        quantization_config=model_args.get_quantization_config(),
+    )
+    peft_config._register_custom_module({
+        GptOssExperts: GptOssExpertsLora
+    })
+    model = get_peft_model(model, peft_config)
+
+    # add is_causal attribute to each layer for flash attn
+    if "arcee" in model_args.model_name_or_path.lower():
+        model.model._keep_in_fp32_modules = []
+        for layer in model.model.layers:
+            layer.self_attn.is_causal = True
 
     tokenizer = AutoTokenizer.from_pretrained(
         tokenizer_args.tokenizer_name_or_path,
@@ -161,6 +194,7 @@ def main(cfg: DictConfig) -> None:
                 tokenize=False,
                 add_generation_prompt=True,
                 enable_thinking=False,
+                reasoning_effort="low",
                 tools=json.loads(example["tools"]),
             )
         else:
@@ -168,6 +202,7 @@ def main(cfg: DictConfig) -> None:
                 example["prompt"],
                 tokenize=False,
                 add_generation_prompt=True,
+                reasoning_effort="low",
                 enable_thinking=False,
             )
         # assistant generation start and thinking truncated by prompt
@@ -222,11 +257,10 @@ def main(cfg: DictConfig) -> None:
 
     # 5. Initialize DPOTrainer
     trainer = DPOTrainer(
-        model_args.model_name_or_path,
+        model,
         args=trainer_args,
         train_dataset=train_dataset,
         processing_class=tokenizer,
-        peft_config=peft_config,
     )
 
     # 6. Start training

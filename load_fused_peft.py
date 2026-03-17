@@ -1,9 +1,13 @@
 import argparse
+import json
 import os
 
 import torch
-from peft import AutoPeftModelForCausalLM, PeftModel
-from transformers import AutoModelForCausalLM, AutoTokenizer
+from peft import PeftModel, get_peft_model, LoraConfig
+from transformers import AutoModelForCausalLM, AutoTokenizer, Mxfp4Config
+from transformers.models.gpt_oss.modeling_gpt_oss import GptOssExperts
+from gpt_moe_layer import GptOssExpertsLora
+from safetensors import safe_open
 
 
 DTYPE_MAP = {
@@ -12,23 +16,33 @@ DTYPE_MAP = {
     "bfloat16": torch.bfloat16,
 }
 
+def load_gpt_oss(base_model, ckpt_folder, dtype):
+    model = AutoModelForCausalLM.from_pretrained(base_model, dtype=dtype, device_map=None, quantization_config=Mxfp4Config(dequantize=True))
+    with open(os.path.join(ckpt_folder, "adapter_config.json")) as f:
+        adapter_config = json.load(f)
+    peft_config = LoraConfig(**adapter_config)
+    peft_config._register_custom_module({
+        GptOssExperts: GptOssExpertsLora
+    })
+    model = get_peft_model(model, peft_config)
+    tensors = {}
+    with safe_open(os.path.join(ckpt_folder, "adapter_model.safetensors"), "pt") as f:
+        for k in f.keys():
+            tensors[k] = f.get_tensor(k)
+    model.load_state_dict(tensors)
+    return model
+    
 
 def convert_checkpoint(base_model, ckpt_folder, output_folder, dtype):
     torch_dtype = DTYPE_MAP[dtype]
 
-    if base_model:
+    if "oss" in base_model:
+        model = load_gpt_oss(base_model, ckpt_folder, dtype=dtype)
+    else:
         print(f"Loading base model from {base_model}...")
         base = AutoModelForCausalLM.from_pretrained(base_model, torch_dtype=torch_dtype)
         print(f"Loading LoRA adapter from {ckpt_folder}...")
         model = PeftModel.from_pretrained(base, ckpt_folder, is_trainable=False)
-    else:
-        print(
-            "Loading PEFT checkpoint (base model resolved from adapter_config.json) "
-            f"from {ckpt_folder}..."
-        )
-        model = AutoPeftModelForCausalLM.from_pretrained(
-            ckpt_folder, torch_dtype=torch_dtype
-        )
 
     print("Loading tokenizer...")
     try:
@@ -70,6 +84,7 @@ if __name__ == "__main__":
         "--base_model",
         type=str,
         default=None,
+        required=True,
         help=(
             "Optional base model name/path. "
             "If omitted, base model is read from adapter_config.json."
