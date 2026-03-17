@@ -156,6 +156,7 @@ def main(cfg: DictConfig) -> None:
         GptOssExperts: GptOssExpertsLora
     })
     model = get_peft_model(model, peft_config)
+    model.compile()
 
     # add is_causal attribute to each layer for flash attn
     if "arcee" in model_args.model_name_or_path.lower():

@@ -3,6 +3,8 @@ model_args:
   dtype: "bfloat16"
   attn_implementation: "kernels-community/flash-attn3"
   attention_dropout: 0.1
+  trust_remote_code: false
+  use_kernels: true
 
 tokenizer_args:
   tokenizer_name_or_path: ${model_args.model_name_or_path}
@@ -48,3 +50,4 @@ trainer_args:
   report_to: "wandb"
   disable_dropout: false
   run_name: "qwen3-8b-dpo"
+  save_only_model: true

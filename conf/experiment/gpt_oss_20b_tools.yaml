@@ -1,10 +1,10 @@
 # @package _global_
 model_args:
   model_name_or_path: "openai/gpt-oss-20b"
-  attn_implementation: "kernels-community/flash-attn3"
+  attn_implementation: "kernels-community/vllm-flash-attn3"
   quantization: "mxfp4"
   dequantize: true
-  use_kernels: true
+  use_kernels: false
 
 data_args:
   dataset_name: "thavens/gpt-oss-20b-secalign-tools"

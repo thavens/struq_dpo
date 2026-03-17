@@ -253,17 +253,123 @@ class GptOssExpertsLora(nn.Module, peft.tuners.lora.layer.LoraLayer):
             for param in adapter_dict.values():
                 nn.init.zeros_(param)
 
-    def _apply_gate(self, gate_up: torch.Tensor) -> torch.Tensor:
-        gate, up = gate_up[..., ::2], gate_up[..., 1::2]
-        gate = gate.clamp(min=None, max=self.base_layer.limit)
-        up = up.clamp(min=-self.base_layer.limit, max=self.base_layer.limit)
-        glu = gate * torch.sigmoid(gate * self.base_layer.alpha)
-        return (up + 1) * glu
+    # def _apply_gate(self, gate_up: torch.Tensor) -> torch.Tensor:
+    #     gate, up = gate_up[..., ::2], gate_up[..., 1::2]
+    #     gate = gate.clamp(min=None, max=self.base_layer.limit)
+    #     up = up.clamp(min=-self.base_layer.limit, max=self.base_layer.limit)
+    #     glu = gate * torch.sigmoid(gate * self.base_layer.alpha)
+    #     return (up + 1) * glu
+
+    # def forward(
+    #     self, hidden_states: torch.Tensor, router_indices=None, routing_weights=None
+    # ) -> torch.Tensor:
+    #     """
+    #     Args:
+    #         hidden_states (torch.Tensor): (batch_size, seq_len, hidden_size)
+    #         router_indices (torch.Tensor): (batch_size * token_num, top_k)
+    #         routing_weights (torch.Tensor): (batch_size * token_num, top_k)
+    #     Returns:
+    #         torch.Tensor
+    #     """
+    #     bl = self.base_layer
+    #     hidden_states_2d = hidden_states.view(-1, bl.hidden_size)
+    #     has_bias = bl.gate_up_proj_bias is not None
+
+    #     # When adapters are disabled (e.g. DPO reference pass) or merged into
+    #     # base weights, fall back to the base layer so the LoRA delta is not
+    #     # applied twice / applied when it shouldn't be.
+    #     if self.disable_adapters or self.merged:
+    #         return grouped_mm_experts_forward(
+    #             hidden_states=hidden_states_2d,
+    #             top_k_index=router_indices,
+    #             top_k_weights=routing_weights,
+    #             num_experts=bl.num_experts,
+    #             has_bias=has_bias,
+    #             is_transposed=True,
+    #             gate_up_proj=bl.gate_up_proj,
+    #             down_proj=bl.down_proj,
+    #             apply_gate=self._apply_gate,
+    #             gate_up_proj_bias=bl.gate_up_proj_bias,
+    #             down_proj_bias=bl.down_proj_bias
+    #         )
+
+    #     scaling = self.scaling[self.adapter_name]
+
+    #     device = hidden_states_2d.device
+    #     num_top_k = router_indices.size(-1)
+    #     num_tokens = hidden_states_2d.size(0)
+    #     hidden_dim = hidden_states_2d.size(-1)
+
+    #     # S is the number of selected token-expert pairs (S = num_tokens * num_top_k)
+    #     token_idx = (
+    #         torch.arange(num_tokens, device=device)
+    #         .unsqueeze(1)
+    #         .expand(-1, num_top_k)
+    #         .reshape(-1)
+    #     )
+    #     sample_weights = routing_weights.reshape(-1)
+    #     expert_ids = router_indices.reshape(-1)
+    #     selected_hidden_states = hidden_states_2d[token_idx]
+
+    #     perm, inv_perm, offsets = _compute_routing(expert_ids, bl.num_experts, device)
+
+    #     expert_ids_g = expert_ids[perm]
+    #     sample_weights_g = sample_weights[perm]
+    #     selected_hidden_states_g = selected_hidden_states[perm]
+
+    #     # --- Gate/up projection + LoRA ---
+    #     proj_out = _grouped_linear(
+    #         selected_hidden_states_g,
+    #         bl.gate_up_proj,
+    #         offsets,
+    #         bias=bl.gate_up_proj_bias[expert_ids_g] if has_bias else None,
+    #         is_transposed=True,
+    #     )  # (S, 2 * intermediate_dim)
+
+    #     # gate_up LoRA: hidden -> r -> 2*intermediate
+    #     lora_A = self.lora_A[self.adapter_name]
+    #     lora_B = self.lora_B[self.adapter_name]
+    #     lora_gate_up = _grouped_linear(
+    #         selected_hidden_states_g, lora_A["gate_up_proj"], offsets, is_transposed=True
+    #     )
+    #     lora_gate_up = _grouped_linear(
+    #         lora_gate_up, lora_B["gate_up_proj"], offsets, is_transposed=True
+    #     )
+    #     proj_out = proj_out + lora_gate_up * scaling
+
+    #     # Apply gating
+    #     proj_out = self._apply_gate(proj_out)  # (S, intermediate_dim)
+
+    #     # --- Down projection + LoRA ---
+    #     down_out = _grouped_linear(
+    #         proj_out,
+    #         bl.down_proj,
+    #         offsets,
+    #         bias=bl.down_proj_bias[expert_ids_g] if has_bias else None,
+    #         is_transposed=True,
+    #     )  # (S, hidden_dim)
+
+    #     # down LoRA: intermediate -> r -> hidden
+    #     lora_down = _grouped_linear(
+    #         proj_out, lora_A["down_proj"], offsets, is_transposed=True
+    #     )
+    #     lora_down = _grouped_linear(
+    #         lora_down, lora_B["down_proj"], offsets, is_transposed=True
+    #     )
+    #     proj_out = down_out + lora_down * scaling
+
+    #     # Apply routing weights, restore original order, and accumulate
+    #     proj_out = (proj_out * sample_weights_g.unsqueeze(-1))[inv_perm]
+    #     final_hidden_states = proj_out.view(num_tokens, num_top_k, hidden_dim).sum(dim=1)
+
+    #     return final_hidden_states.to(hidden_states.dtype)
 
     def forward(
         self, hidden_states: torch.Tensor, router_indices=None, routing_weights=None
     ) -> torch.Tensor:
         """
+        Forward pass using the per-expert for-loop (training path) with LoRA.
+
         Args:
             hidden_states (torch.Tensor): (batch_size, seq_len, hidden_size)
             router_indices (torch.Tensor): (batch_size * token_num, top_k)
@@ -272,94 +378,71 @@ class GptOssExpertsLora(nn.Module, peft.tuners.lora.layer.LoraLayer):
             torch.Tensor
         """
         bl = self.base_layer
-        hidden_states_2d = hidden_states.view(-1, bl.hidden_size)
-        has_bias = bl.gate_up_proj_bias is not None
+        batch_size = hidden_states.shape[0]
+        hidden_states = hidden_states.reshape(-1, bl.hidden_size)  # (num_tokens, hidden_size)
+        num_experts = routing_weights.shape[1]
+
+        next_states = torch.zeros_like(hidden_states)
+        with torch.no_grad():
+            expert_mask = torch.nn.functional.one_hot(
+                router_indices, num_classes=num_experts + 1
+            )  # masking is also a class
+            expert_mask = expert_mask.permute(2, 1, 0)
+            expert_hit = torch.greater(expert_mask.sum(dim=(-1, -2)), 0).nonzero()
 
         # When adapters are disabled (e.g. DPO reference pass) or merged into
-        # base weights, fall back to the base layer so the LoRA delta is not
+        # base weights, fall back to base-layer-only so the LoRA delta is not
         # applied twice / applied when it shouldn't be.
         if self.disable_adapters or self.merged:
-            return grouped_mm_experts_forward(
-                hidden_states=hidden_states_2d,
-                top_k_index=router_indices,
-                top_k_weights=routing_weights,
-                num_experts=bl.num_experts,
-                has_bias=has_bias,
-                is_transposed=True,
-                gate_up_proj=bl.gate_up_proj,
-                down_proj=bl.down_proj,
-                apply_gate=self._apply_gate,
-                gate_up_proj_bias=bl.gate_up_proj_bias,
-                down_proj_bias=bl.down_proj_bias
-            )
+            for expert_idx in expert_hit[:]:
+                expert_idx = expert_idx[0]
+                if expert_idx == num_experts:
+                    continue
+                with torch.no_grad():
+                    _, token_idx = torch.where(expert_mask[expert_idx])
+                current_state = hidden_states[token_idx]
+                gate_up = current_state @ bl.gate_up_proj[expert_idx] + bl.gate_up_proj_bias[expert_idx]
+                gate, up = gate_up[..., ::2], gate_up[..., 1::2]
+                gate = gate.clamp(min=None, max=bl.limit)
+                up = up.clamp(min=-bl.limit, max=bl.limit)
+                glu = gate * torch.sigmoid(gate * bl.alpha)
+                gated_output = (up + 1) * glu
+                out = gated_output @ bl.down_proj[expert_idx] + bl.down_proj_bias[expert_idx]
+                weighted_output = out * routing_weights[token_idx, expert_idx, None]
+                next_states.index_add_(0, token_idx, weighted_output.to(hidden_states.dtype))
+            return next_states.view(batch_size, -1, bl.hidden_size)
 
+        # LoRA active path
         scaling = self.scaling[self.adapter_name]
-
-        device = hidden_states_2d.device
-        num_top_k = router_indices.size(-1)
-        num_tokens = hidden_states_2d.size(0)
-        hidden_dim = hidden_states_2d.size(-1)
-
-        # S is the number of selected token-expert pairs (S = num_tokens * num_top_k)
-        token_idx = (
-            torch.arange(num_tokens, device=device)
-            .unsqueeze(1)
-            .expand(-1, num_top_k)
-            .reshape(-1)
-        )
-        sample_weights = routing_weights.reshape(-1)
-        expert_ids = router_indices.reshape(-1)
-        selected_hidden_states = hidden_states_2d[token_idx]
-
-        perm, inv_perm, offsets = _compute_routing(expert_ids, bl.num_experts, device)
-
-        expert_ids_g = expert_ids[perm]
-        sample_weights_g = sample_weights[perm]
-        selected_hidden_states_g = selected_hidden_states[perm]
-
-        # --- Gate/up projection + LoRA ---
-        proj_out = _grouped_linear(
-            selected_hidden_states_g,
-            bl.gate_up_proj,
-            offsets,
-            bias=bl.gate_up_proj_bias[expert_ids_g] if has_bias else None,
-            is_transposed=True,
-        )  # (S, 2 * intermediate_dim)
-
-        # gate_up LoRA: hidden -> r -> 2*intermediate
         lora_A = self.lora_A[self.adapter_name]
         lora_B = self.lora_B[self.adapter_name]
-        lora_gate_up = _grouped_linear(
-            selected_hidden_states_g, lora_A["gate_up_proj"], offsets, is_transposed=True
-        )
-        lora_gate_up = _grouped_linear(
-            lora_gate_up, lora_B["gate_up_proj"], offsets, is_transposed=True
-        )
-        proj_out = proj_out + lora_gate_up * scaling
 
-        # Apply gating
-        proj_out = self._apply_gate(proj_out)  # (S, intermediate_dim)
+        for expert_idx in expert_hit[:]:
+            expert_idx = expert_idx[0]
+            if expert_idx == num_experts:
+                continue
+            with torch.no_grad():
+                _, token_idx = torch.where(expert_mask[expert_idx])
+            current_state = hidden_states[token_idx]
 
-        # --- Down projection + LoRA ---
-        down_out = _grouped_linear(
-            proj_out,
-            bl.down_proj,
-            offsets,
-            bias=bl.down_proj_bias[expert_ids_g] if has_bias else None,
-            is_transposed=True,
-        )  # (S, hidden_dim)
+            # --- Gate/up projection + LoRA ---
+            gate_up = current_state @ bl.gate_up_proj[expert_idx] + bl.gate_up_proj_bias[expert_idx]
+            lora_gate_up = (current_state @ lora_A["gate_up_proj"][expert_idx]) @ lora_B["gate_up_proj"][expert_idx]
+            gate_up = gate_up + lora_gate_up * scaling
 
-        # down LoRA: intermediate -> r -> hidden
-        lora_down = _grouped_linear(
-            proj_out, lora_A["down_proj"], offsets, is_transposed=True
-        )
-        lora_down = _grouped_linear(
-            lora_down, lora_B["down_proj"], offsets, is_transposed=True
-        )
-        proj_out = down_out + lora_down * scaling
+            # Apply gating
+            gate, up = gate_up[..., ::2], gate_up[..., 1::2]
+            gate = gate.clamp(min=None, max=bl.limit)
+            up = up.clamp(min=-bl.limit, max=bl.limit)
+            glu = gate * torch.sigmoid(gate * bl.alpha)
+            gated_output = (up + 1) * glu
 
-        # Apply routing weights, restore original order, and accumulate
-        proj_out = (proj_out * sample_weights_g.unsqueeze(-1))[inv_perm]
-        final_hidden_states = proj_out.view(num_tokens, num_top_k, hidden_dim).sum(dim=1)
+            # --- Down projection + LoRA ---
+            out = gated_output @ bl.down_proj[expert_idx] + bl.down_proj_bias[expert_idx]
+            lora_down = (gated_output @ lora_A["down_proj"][expert_idx]) @ lora_B["down_proj"][expert_idx]
+            out = out + lora_down * scaling
 
-        return final_hidden_states.to(hidden_states.dtype)
+            weighted_output = out * routing_weights[token_idx, expert_idx, None]
+            next_states.index_add_(0, token_idx, weighted_output.to(hidden_states.dtype))
+
+        return next_states.view(batch_size, -1, bl.hidden_size)
