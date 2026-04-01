@@ -26,6 +26,8 @@ lora_args:
 
 format_args:
   ablate_context: false
+  reasoning: false
+  reasoning_only: false
 
 trainer_args:
   use_liger_kernel: false

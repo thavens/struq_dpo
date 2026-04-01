@@ -1,0 +1,19 @@
+# @package _global_
+model_args:
+  model_name_or_path: "Qwen/Qwen3-4B"
+
+data_args:
+  dataset_name: "thavens/Qwen3-4B-secalign-tools-thinking"
+
+format_args:
+  reasoning: true
+
+trainer_args:
+  run_name: q3_4b_secalign_tools_fr
+  output_dir: outputs/${trainer_args.run_name}
+
+  per_device_train_batch_size: 4
+  gradient_accumulation_steps: 16
+
+  max_length: 4096
+
